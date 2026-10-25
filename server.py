@@ -1,18 +1,19 @@
 import asyncio
 import struct
 import os
+import base64
 import websockets
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-SECRET_KEY = b'0123456789abcdef0123456789abcdef' # 32 байта
+SECRET_KEY = b'0123456789abcdef0123456789abcdef'
 aesgcm = AESGCM(SECRET_KEY)
 
 async def handle_connection(websocket):
     try:
-        encrypted_data = await websocket.recv()
-        if isinstance(encrypted_data, str):
-            encrypted_data = encrypted_data.encode('utf-8')
-            
+        # Получаем первый пакет (заголовок с адресом) в виде текста Base64
+        data = await websocket.recv()
+        encrypted_data = base64.b64decode(data)
+        
         nonce = encrypted_data[:12]
         packet_len = struct.unpack('>I', encrypted_data[12:16])[0]
         payload = encrypted_data[16:16+packet_len]
@@ -31,8 +32,7 @@ async def handle_connection(websocket):
             try:
                 while True:
                     data = await websocket.recv()
-                    if isinstance(data, str): data = data.encode('utf-8')
-                    remote_writer.write(data)
+                    remote_writer.write(base64.b64decode(data))
                     await remote_writer.drain()
             except: pass
 
@@ -41,13 +41,13 @@ async def handle_connection(websocket):
                 while True:
                     data = await remote_reader.read(4096)
                     if not data: break
-                    await websocket.send(data)
+                    await websocket.send(base64.b64encode(data).decode('ascii'))
             except: pass
                 
         await asyncio.gather(pipe_ws_to_remote(), pipe_remote_to_ws())
         
     except Exception as e:
-        print(f"Ошибка: {e}")
+        print(f"Ошибка сервера: {e}")
     finally:
         await websocket.close()
 
